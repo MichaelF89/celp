@@ -4,12 +4,15 @@ import random
 from collections import defaultdict
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
+import pandas as pd
 import operator
 
 # Functie om data van alle steden samen te voegen in 1 DataFrame
 def citymerge(var):
     return pd.concat([pd.DataFrame(var[city]) for city in var]).reset_index()
 
+# Creer DatFrame business_df van BUSINESSES
+business_df = citymerge(BUSINESSES)
 	
 # Creeer Utility Matrix en Mean Utility Matrix uit een variabele van data.py (REVIEWS, USERS, BUSINESSES, etc.)
 def create_utility_matrix(var):
@@ -66,10 +69,18 @@ def weighted_mean(neighborhood, utility_matrix, user_id):
         return 0
 		
 
+# Voorspel een score voor bedrijven en return deze als dict
 def predictions(utility_matrix, similarity_matrix, user_id):
     predictdict = defaultdict()
+    
+    # Extract list of reviewed businesses to get new results
+    review_list = utility_matrix[user_id][utility_matrix[user_id].notna()].index
+    
     for business_id in similarity_matrix.index:
-        predictdict[business_id] = weighted_mean(select_neighborhood(similarity_matrix, utility_matrix, user_id, business_id), utility_matrix, user_id)
+        if business_id in review_list:
+            pass
+        else:
+            predictdict[business_id] = weighted_mean(select_neighborhood(similarity_matrix, utility_matrix, user_id, business_id), utility_matrix, user_id)
     
     return predictdict
 
@@ -87,9 +98,27 @@ def recommend(user_id=None, business_id=None, city=None, n=10):
             adress:str
         }
     """
+    if user_id != None:
+	    # Create predictions dictionary
+	    predictions_dict = predictions(utility_matrix, similarity_matrix, user_id)
+		
+	    # Create a Series and delete all predictions with a 0
+	    predictions_serie = pd.Series(predictions_dict)
+	    predictions_serie = predictions_serie[predictions_serie != 0].sort_values(ascending=False)
+		
+	    # Create a new DataFrame with only businesses that are in the predictions
+	    predictions_df = business_df[business_df['business_id'].isin(predictions_serie.index)]
+		
+	    # Add prediction column to DataFrame
+	    predictions_df  = predictions_df.assign(prediction=predictions_df['business_id'].map(predictions_dict)).sort_values('prediction', ascending=False)
+		
+	    predictions_df['stars'] = predictions_df['stars'].astype(str)
+
+        # Return JSON with top n predictions and where the business is open
+	    return predictions_df[predictions_df['is_open'] == 1].head(n)[['business_id', 'stars', 'name', 'city', 'address']].to_dict(orient='records')
 	
-    if not city:
+    elif not city:
         city = random.choice(CITIES)
-    return random.sample(BUSINESSES[city], n)
+        return random.sample(BUSINESSES[city], n)
 
 	
